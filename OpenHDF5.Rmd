@@ -1,0 +1,167 @@
+---
+title: "OpenHDF5"
+author: "Nate Looker"
+date: "June 20, 2016"
+output: html_document
+---
+
+## About this code
+
+```{r load-libraries}
+# load libraries
+library(raster)
+library(rhdf5)
+library(rgdal)
+```
+
+## Read in a file
+
+```{r select-file}
+# Save path name as an object
+f <- "../NEONdata/D17-California/TEAK/2013/spectrometer/reflectance/Subset3NIS1_20130614_100459_atmcor.h5"
+
+# view h5 structure
+h5ls(f)
+```
+
+## Import spatial information
+
+```{r import-spatial-info}
+# import spatial info; not always in same place within an HDF5
+mapInfo <- h5read(f, "map info", read.attributes = T)
+
+```
+
+## Grab reflectance metadata
+
+```{r get-refl-metadata}
+# read in reflectance data attributes
+
+reflInfo <- h5readAttributes(f, "Reflectance")
+
+# define scale factor
+scaleFactor <- reflInfo$'Scale Factor'
+
+# define no data value
+noDataValue <- as.numeric(reflInfo$'data ignore value')
+
+```
+
+## Import data dimensions
+
+```{r import-dims}
+# open file for viewing
+fid <- H5Fopen(f)
+# open / connect to reflectance dataset
+did <- H5Dopen(fid, "Reflectance")
+# in R, dims read in as columns x rows x bands (reverse of HDFView)
+# grab the dataset dimensions
+sid <- H5Dget_space(did)
+dims <- H5Sget_simple_extent_dims(sid)$size
+
+# close all open connections
+H5Sclose(sid)
+H5Dclose(did)
+H5Fclose(fid)
+
+```
+
+## Read in reflectance data
+
+```{r read-data}
+
+# extract slice of H5 file
+b56 <- h5read(f, "Reflectance", index=list(1:dims[1], 1:dims[2], 56))
+
+```
+
+## Convert data to matrix
+
+```{r array-to-matrix}
+# convert to matrix
+b56 <- b56[,,1]
+
+# plot image
+image(log(b56))
+
+hist(b56)
+```
+
+## Clean up data
+
+```{r data-clean-up}
+
+# assign no data values to object
+b56[b56 == noDataValue] <- NA
+
+# apply scale factor
+b56 <- b56 / scaleFactor
+```
+
+## Transpose data
+
+```{r transpose-data}
+# transpose the matrix
+b56 <- t(b56)
+image(log(b56))
+
+```
+
+## Create spatial extent
+
+```{r create-spatial-extent}
+
+# split out map info object
+
+mapInfo <- unlist(strsplit(mapInfo, ","))
+# define upper left-hand corner coordinate
+xMin <- as.numeric(mapInfo[4])
+yMax <- as.numeric(mapInfo[5])
+
+# get spatial resolution
+xRes <- as.numeric(mapInfo[6])
+yRes <- as.numeric(mapInfo[7])
+
+# calculate other coordinates
+xMax <- xMin + (dims[1] * xRes)
+yMin <- yMax - (dims[2] * yRes)
+
+```
+
+## Create spatial extent
+```{r create-extent}
+
+# define spatial extent
+rasExt <- extent(xMin, xMax, yMin, yMax)
+
+# create raster object
+b56r <- raster(b56, crs=CRS("+init=epsg:32611"))
+extent(b56r) <- rasExt
+
+# plot spatially referenced data
+plot(b56r)
+```
+
+## Import NEON functions
+
+```{r import-using-functions}
+
+require(devtools)
+# install_github("lwasser/neon-aop-package/neonAOP")
+require(neonAOP)
+
+# use open_band function to view data
+b55 <- open_band(f, 55, epsg = 32611)
+plot(b55)
+
+# import several bands
+bands <- c(58, 34, 19)
+
+# create raster stack
+RGBStack <- create_stack(f, bands=bands, epsg = 32611)
+
+# plot RGB image
+plotRGB(RGBStack, stretch="lin")
+```
+
+
