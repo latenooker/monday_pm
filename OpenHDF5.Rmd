@@ -162,6 +162,8 @@ RGBStack <- create_stack(f, bands=bands, epsg = 32611)
 
 # plot RGB image
 plotRGB(RGBStack, stretch="lin")
+
+plotRGB(create_stack(f, bands=c(100, 50, 10), epsg = 32611), stretch="lin")
 ```
 
 
